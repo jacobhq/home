@@ -1,6 +1,8 @@
 version: '2'
 volumes:
     config:
+    html:
+    mysql:
 services:
   homeassistant:
     build: homeassistant
@@ -27,3 +29,66 @@ services:
       - 'config:/hass-config'
     environment:
       - HC_BASEPATH=/hass-config
+  # https://hub.docker.com/_/nextcloud/
+  app:
+    build: app
+    privileged: true
+    volumes:
+      - html:/var/www/html
+    environment:
+      NEXTCLOUD_TRUSTED_DOMAINS: "*.balena-devices.com"
+      MYSQL_HOST: db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloud
+      REDIS_HOST: redis
+      REDIS_HOST_PASSWORD: nextcloud
+    depends_on:
+      - db
+      - redis
+
+  # https://hub.docker.com/_/nextcloud/
+  cron:
+    build: app
+    privileged: true
+    entrypoint: /cron.sh
+    volumes:
+      - html:/var/www/html
+    depends_on:
+      - app
+
+  # https://hub.docker.com/_/nginx/
+  web:
+    build: web
+    ports:
+      - 80:80/tcp
+    volumes:
+      - html:/var/www/html:ro
+    depends_on:
+      - app
+
+  # https://hub.docker.com/_/mariadb/
+  db:
+    build: db
+    volumes:
+      - mysql:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloud
+
+  # https://hub.docker.com/_/mariadb/
+  sqldump:
+    build: db
+    command: "/sqldump.sh"
+    environment:
+      MYSQL_DATABASE: nextcloud
+    volumes:
+      - mysql:/var/lib/mysql
+    depends_on:
+      - db
+
+  # https://hub.docker.com/_/redis
+  redis:
+    image: redis:6.0.8-alpine
+    command: redis-server --requirepass nextcloud
