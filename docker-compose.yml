@@ -1,94 +1,53 @@
-version: '2'
-volumes:
-    config:
-    html:
-    mysql:
+# NOTE: This docker-compose.yml is meant to be just an example guideline
+# on how you can achieve the same. It is not intented to run out of the box
+# and you must edit the below configurations to suit your needs.
+
+version: "3.7"
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  image: listmonk/listmonk:latest
+  ports:
+    - "80:80"
+  networks:
+    - listmonk
+
+x-db-defaults: &db-defaults
+    image: postgres:11
+    ports:
+      - "9432:5432"
+    networks:
+      - listmonk
+    environment:
+      - POSTGRES_PASSWORD=listmonk
+      - POSTGRES_USER=listmonk
+      - POSTGRES_DB=listmonk
+    restart: unless-stopped
+
 services:
-  homeassistant:
-    build: homeassistant
-    ports:
-      - 80:8123
-    privileged: true
-    volumes:
-      - 'config:/config'
-    restart: always
-    devices:
-      - "/dev:/dev"
-      - "/dev/serial/by-id/usb-0658_0200-if00:/dev/zwave"
-  mqtt:
-    image: arm32v6/eclipse-mosquitto
-    ports:
-      - "1883:1883"
-    restart: always
-  hass-configurator:
-    image: "causticlab/hass-configurator-docker:arm"
-    restart: always
-    ports:
-      - "8080:3218"
-    volumes:
-      - 'config:/hass-config'
-    environment:
-      - HC_BASEPATH=/hass-config
-  # https://hub.docker.com/_/nextcloud/
-  app:
-    build: app
-    privileged: true
-    volumes:
-      - html:/var/www/html
-    environment:
-      NEXTCLOUD_TRUSTED_DOMAINS: "*.balena-devices.com"
-      MYSQL_HOST: db
-      MYSQL_DATABASE: nextcloud
-      MYSQL_USER: nextcloud
-      MYSQL_PASSWORD: nextcloud
-      REDIS_HOST: redis
-      REDIS_HOST_PASSWORD: nextcloud
-    depends_on:
-      - db
-      - redis
-
-  # https://hub.docker.com/_/nextcloud/
-  cron:
-    build: app
-    privileged: true
-    entrypoint: /cron.sh
-    volumes:
-      - html:/var/www/html
-    depends_on:
-      - app
-
-  # https://hub.docker.com/_/nginx/
-  web:
-    build: web
-    ports:
-      - 80:80/tcp
-    volumes:
-      - html:/var/www/html:ro
-    depends_on:
-      - app
-
-  # https://hub.docker.com/_/mariadb/
   db:
-    build: db
+    <<: *db-defaults
     volumes:
-      - mysql:/var/lib/mysql
-    environment:
-      MYSQL_DATABASE: nextcloud
-      MYSQL_USER: nextcloud
-      MYSQL_PASSWORD: nextcloud
+      - type: volume
+        source: listmonk-data
+        target: /var/lib/postgresql/data
 
-  # https://hub.docker.com/_/mariadb/
-  sqldump:
-    build: db
-    command: "/sqldump.sh"
-    environment:
-      MYSQL_DATABASE: nextcloud
-    volumes:
-      - mysql:/var/lib/mysql
+  app:
+    <<: *app-defaults
     depends_on:
       - db
 
-  # https://hub.docker.com/_/redis
-  redis:
-    image: redis:6.0.8-alpine
-    command: redis-server --requirepass nextcloud
+  demo-db:
+    <<: *db-defaults
+
+  demo-app:
+    <<: *app-defaults
+    command: [sh, -c, "yes | ./listmonk --install --config config-demo.toml && ./listmonk --config config-demo.toml"]
+    depends_on: 
+      - demo-db
+
+networks:
+  listmonk:
+
+volumes:
+  listmonk-data:
